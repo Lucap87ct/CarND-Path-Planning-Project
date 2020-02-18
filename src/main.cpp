@@ -102,7 +102,9 @@ int main() {
           constexpr int min_prev_size = {
               2}; // min size of previous points for initialization
           constexpr double waypoints_s_spacing{30.0}; // m
-          constexpr int n_points{50};       // number of points on the spline
+          constexpr double safety_distance{
+              30.0};                  // safety distance in s from objects in m
+          constexpr int n_points{50}; // number of points on the spline
           constexpr double vel_limit{49.5}; // hard-coded speed limit
 
           std::size_t prev_size =
@@ -113,29 +115,68 @@ int main() {
             car_s = end_path_s;
           }
 
-          // reference lane calculation
-          int ref_lane{1}; // reference lane is the center lane
-          if (!initialization && ref_vel == vel_limit) {
-            ref_lane = 0;
+          const int left_lane{0};
+          const int center_lane{1};
+          const int right_lane{2};
+          // current lane calculation
+          int current_host_lane{center_lane};
+          if (car_d < (2 + 4 * center_lane + 2) &&
+              car_d > (2 + 4 * center_lane - 2)) {
+            current_host_lane = center_lane;
+          } else if (car_d < (2 + 4 * left_lane + 2) &&
+                     car_d > (2 + 4 * left_lane - 2)) {
+            current_host_lane = left_lane;
+          }
+          if (car_d < (2 + 4 * right_lane + 2) &&
+              car_d > (2 + 4 * right_lane - 2)) {
+            current_host_lane = right_lane;
+          }
+
+          int ref_lane = center_lane; // reference lane is the center lane
+
+          // basic overtaking rules
+          bool overtaking_lane_left_free{false};
+          bool overtaking_lane_right_free{false};
+          if (current_host_lane == center_lane) {
+            overtaking_lane_left_free = true;
+            overtaking_lane_right_free = true;
+          } else if (current_host_lane == left_lane) {
+            bool overtaking_lane_right_free = true;
+          } else if (current_host_lane == right_lane) {
+            bool overtaking_lane_left_free = true;
           }
 
           // reference velocity calculation from object fusion data
+          // together with reference lane calculation for overtaking
           bool close_object{false};
-          double vx_object, vy_object, vabs_object, s_object;
+          double vx_object, vy_object, vabs_object, s_object, d_object;
           for (std::size_t i = 0; i < sensor_fusion.size(); i++) {
-            float d = sensor_fusion[i][6];
+            d_object = sensor_fusion[i][6];
+            vx_object = sensor_fusion[i][3];
+            vy_object = sensor_fusion[i][4];
+            vabs_object =
+                std::sqrt(vx_object * vx_object + vy_object * vy_object);
+            s_object = sensor_fusion[i][5];
+            // simple object prediction
+            s_object += (double)prev_size * points_s_spacing * vabs_object;
             // check if object is in ego lane and extract its velocity and s
-            if (d < (2 + 4 * ref_lane + 2) && d > (2 + 4 * ref_lane - 2)) {
-              vx_object = sensor_fusion[i][3];
-              vy_object = sensor_fusion[i][4];
-              vabs_object =
-                  std::sqrt(vx_object * vx_object + vy_object * vy_object);
-              s_object = sensor_fusion[i][5];
-              s_object += (double)prev_size * points_s_spacing * vabs_object;
-
-              if ((s_object > car_s) &&
-                  (s_object - car_s < waypoints_s_spacing)) {
+            if (d_object < (2 + 4 * current_host_lane + 2) &&
+                d_object > (2 + 4 * current_host_lane - 2)) {
+              if ((s_object > car_s) && (s_object - car_s < safety_distance)) {
                 close_object = true;
+              }
+            }
+            // check if object is in left lane within a safety s distance
+            else if (d_object < (2 + 4 * left_lane + 2) &&
+                     d_object > (2 + 4 * left_lane - 2)) {
+              if (abs(s_object - car_s) < safety_distance) {
+                overtaking_lane_left_free = false;
+              }
+              // check if object is in right lane within a safety s distance
+            } else if (d_object < (2 + 4 * right_lane + 2) &&
+                       d_object > (2 + 4 * right_lane - 2)) {
+              if (abs(s_object - car_s) < safety_distance) {
+                overtaking_lane_right_free = false;
               }
             }
           }
