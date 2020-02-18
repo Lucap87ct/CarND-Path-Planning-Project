@@ -96,7 +96,6 @@ int main() {
           json msgJson;
 
           // declaring some constants
-          constexpr int ref_lane{1}; // reference lane is the center lane
           constexpr double vel_increment{0.224}; // velocity increment in mph
           constexpr double mph_to_mps = 1.61 / 3.6;
           constexpr double points_s_spacing{0.02}; // m
@@ -112,6 +111,12 @@ int main() {
 
           if (prev_size > 0) {
             car_s = end_path_s;
+          }
+
+          // reference lane calculation
+          int ref_lane{1}; // reference lane is the center lane
+          if (!initialization && ref_vel == vel_limit) {
+            ref_lane = 0;
           }
 
           // reference velocity calculation from object fusion data
@@ -135,7 +140,7 @@ int main() {
             }
           }
 
-          // reference velocity calculation
+          // reference velocity final calculation
           if (initialization) {
             ref_vel = 0.0;
             initialization = false;
