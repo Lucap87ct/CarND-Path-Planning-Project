@@ -29,6 +29,10 @@ int main() {
   // The max s value before wrapping around the track back to 0
   constexpr double max_s = 6945.554;
 
+  bool initialization{
+      true}; // boolean to determine if we are in the "cold start" phase
+  double ref_vel{0.0}; // ego vehicle reference velocity
+
   std::ifstream in_map_(map_file_.c_str(), std::ifstream::in);
 
   string line;
@@ -52,12 +56,12 @@ int main() {
   }
 
   h.onMessage([&map_waypoints_x, &map_waypoints_y, &map_waypoints_s,
-               &map_waypoints_dx,
-               &map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data,
-                                  size_t length, uWS::OpCode opCode) {
-    // "42" at the start of the message means there's a websocket message event.
-    // The 4 signifies a websocket message
-    // The 2 signifies a websocket event
+               &map_waypoints_dx, &map_waypoints_dy, &initialization,
+               &ref_vel](uWS::WebSocket<uWS::SERVER> ws, char *data,
+                         size_t length, uWS::OpCode opCode) {
+    // "42" at the start of the message means there's a websocket message
+    // event. The 4 signifies a websocket message The 2 signifies a
+    // websocket event
     if (length && length > 2 && data[0] == '4' && data[1] == '2') {
 
       auto s = hasData(data);
@@ -92,18 +96,55 @@ int main() {
           json msgJson;
 
           // declaring some constants
-          constexpr int lane{1};          // center lane
-          constexpr double ref_vel{49.5}; // mph
+          constexpr int ref_lane{1}; // reference lane is the center lane
+          constexpr double vel_increment{0.224}; // velocity increment in mph
           constexpr double mph_to_mps = 1.61 / 3.6;
           constexpr double points_s_spacing{0.02}; // m
           constexpr int min_prev_size = {
               2}; // min size of previous points for initialization
           constexpr double waypoints_s_spacing{30.0}; // m
-          constexpr int n_points{50}; // number of points on the spline
+          constexpr int n_points{50};       // number of points on the spline
+          constexpr double vel_limit{49.5}; // hard-coded speed limit
 
           std::size_t prev_size =
               previous_path_x
                   .size(); // how many points in the previous path vector
+
+          if (prev_size > 0) {
+            car_s = end_path_s;
+          }
+
+          // reference velocity calculation from object fusion data
+          bool close_object{false};
+          double vx_object, vy_object, vabs_object, s_object;
+          for (std::size_t i = 0; i < sensor_fusion.size(); i++) {
+            float d = sensor_fusion[i][6];
+            // check if object is in ego lane and extract its velocity and s
+            if (d < (2 + 4 * ref_lane + 2) && d > (2 + 4 * ref_lane - 2)) {
+              vx_object = sensor_fusion[i][3];
+              vy_object = sensor_fusion[i][4];
+              vabs_object =
+                  std::sqrt(vx_object * vx_object + vy_object * vy_object);
+              s_object = sensor_fusion[i][5];
+              s_object += (double)prev_size * points_s_spacing * vabs_object;
+
+              if ((s_object > car_s) &&
+                  (s_object - car_s < waypoints_s_spacing)) {
+                close_object = true;
+              }
+            }
+          }
+
+          // reference velocity calculation
+          if (initialization) {
+            ref_vel = 0.0;
+            initialization = false;
+          }
+          if (close_object) {
+            ref_vel -= vel_increment;
+          } else if (ref_vel < vel_limit) {
+            ref_vel += vel_increment;
+          }
 
           // points for generating the spline
           vector<double> ptsx;
@@ -114,8 +155,8 @@ int main() {
           double ref_y = car_y;
           double ref_yaw = deg2rad(car_yaw);
 
-          // first two points of the spline: when previous path vector is not
-          // initialized, they are the current car position and its
+          // first two points of the spline: when previous path vector is
+          // not initialized, they are the current car position and its
           // back-propagation with current heading
           if (prev_size < min_prev_size) {
             double prev_car_x = car_x - cos(car_yaw);
@@ -146,16 +187,16 @@ int main() {
             ptsy.push_back(ref_y);
           }
 
-          // next three points of the spline: calculate them from the current
-          // car s coordinate and d equal to center of lane 1
+          // next three points of the spline: calculate them from the
+          // current car s coordinate and d equal to center of ref_lane (1)
           vector<double> next_wp0 =
-              getXY(car_s + waypoints_s_spacing, 2 + 4 * lane, map_waypoints_s,
-                    map_waypoints_x, map_waypoints_y);
+              getXY(car_s + waypoints_s_spacing, 2 + 4 * ref_lane,
+                    map_waypoints_s, map_waypoints_x, map_waypoints_y);
           vector<double> next_wp1 =
-              getXY(car_s + 2 * waypoints_s_spacing, 2 + 4 * lane,
+              getXY(car_s + 2 * waypoints_s_spacing, 2 + 4 * ref_lane,
                     map_waypoints_s, map_waypoints_x, map_waypoints_y);
           vector<double> next_wp2 =
-              getXY(car_s + 3 * waypoints_s_spacing, 2 + 4 * lane,
+              getXY(car_s + 3 * waypoints_s_spacing, 2 + 4 * ref_lane,
                     map_waypoints_s, map_waypoints_x, map_waypoints_y);
           ptsx.push_back(next_wp0[0]);
           ptsx.push_back(next_wp1[0]);
@@ -180,8 +221,8 @@ int main() {
           vector<double> next_x_vals;
           vector<double> next_y_vals;
 
-          // next values for the planner: the first values are from the previous
-          // path
+          // next values for the planner: the first values are from the
+          // previous path
           for (std::size_t i = 0; i < previous_path_x.size(); i++) {
             next_x_vals.push_back(previous_path_x[i]);
             next_y_vals.push_back(previous_path_y[i]);
@@ -209,8 +250,8 @@ int main() {
             x_point += ref_x;
             y_point += ref_y;
 
-            // next values for the planner: the other points are calculated from
-            // the spline
+            // next values for the planner: the other points are calculated
+            // from the spline
             next_x_vals.push_back(x_point);
             next_y_vals.push_back(y_point);
           }
