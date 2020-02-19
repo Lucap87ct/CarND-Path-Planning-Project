@@ -104,12 +104,14 @@ int main() {
           constexpr double waypoints_s_spacing{30.0}; // m
           constexpr double safety_distance_front{
               30.0}; // safety distance in s from front objects in m
-          constexpr double safety_distance_overtake{
-              30.0}; // safety distance in s from side objects for overtaking in
+          constexpr double safety_distance_overtake_front{
+              50.0}; // safety distance in s from front objects for overtaking
+                     // in
           // m
-          constexpr double safety_distance_overtake_stationary{
-              10.0}; // safety distance in s from side objects for overtaking in
-                     // m
+          constexpr double safety_distance_overtake_rear{
+              -30.0}; // safety distance in s from side or rear objects for
+                      // overtaking in
+          // m
           constexpr int n_points{50};       // number of points on the spline
           constexpr double vel_limit{49.5}; // hard-coded speed limit
 
@@ -174,7 +176,7 @@ int main() {
               if ((s_object > car_s) &&
                   (s_object - car_s < safety_distance_front)) {
                 close_object = true;
-                std::cout << "Close object in front" << std::endl;
+                // std::cout << "Close object in front" << std::endl;
                 if (vabs_object < v_min_close_object) {
                   v_min_close_object = vabs_object;
                 }
@@ -184,25 +186,25 @@ int main() {
             // distance
             else if ((d_object < 4 * current_host_lane) &&
                      (d_object > 4 * current_host_lane - 2)) {
-              if (abs(s_object - car_s) < safety_distance_overtake ||
-                  abs(s_object_without_prediction - car_s) <
-                      safety_distance_overtake_stationary) {
+              if ((s_object - car_s > safety_distance_overtake_rear) &&
+                  (s_object - car_s < safety_distance_overtake_front)) {
+                /*std::cout << "Object on left of ego - s diff = "
+                          << s_object - car_s << std::endl;*/
                 overtaking_lane_left_free = false;
-                std::cout << "Left lane is occupied" << std::endl;
               }
             }
             // check if object is right of host vehicle within a safety s
             // distance
             else if ((d_object > 4 + 4 * current_host_lane) &&
                      (d_object < 6 + 4 * current_host_lane)) {
-              if (abs(s_object - car_s) < safety_distance_overtake ||
-                  abs(s_object_without_prediction - car_s) <
-                      safety_distance_overtake_stationary) {
+              /*std::cout << "Object on right of ego - s = " << s_object
+                        << std::endl;*/
+              if ((s_object - car_s > safety_distance_overtake_rear) &&
+                  (s_object - car_s < safety_distance_overtake_front)) {
+                /*std::cout << "Object on right of ego - s diff = "
+                          << s_object - car_s << std::endl;*/
                 overtaking_lane_right_free = false;
-                std::cout << "Right lane is occupied" << std::endl;
               }
-            } else {
-              std::cout << "Left and right lanes are free" << std::endl;
             }
           }
 
@@ -217,15 +219,19 @@ int main() {
               ref_vel -= vel_increment;
             }
             // prefer left overtaking to right overtaking
-            if (overtaking_lane_left_free && current_host_lane != left_lane) {
+            if (overtaking_lane_left_free && current_host_lane > left_lane) {
               ref_lane = current_host_lane - 1;
+              // std::cout << "Overtake left to lane " << ref_lane << std::endl;
             } else if (overtaking_lane_right_free &&
-                       current_host_lane != right_lane) {
+                       current_host_lane < right_lane) {
               ref_lane = current_host_lane + 1;
+              // std::cout << "Overtake right to lane " << ref_lane <<
+              // std::endl;
             }
           } else if (ref_vel < vel_limit) {
             ref_vel += vel_increment;
           }
+          // std::cout << std::endl;
 
           // points for generating the spline
           vector<double> ptsx;
