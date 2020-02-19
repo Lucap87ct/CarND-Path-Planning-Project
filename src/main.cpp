@@ -96,24 +96,24 @@ int main() {
           json msgJson;
 
           // declaring some constants
-          constexpr double vel_increment{0.224}; // velocity increment in mph
           constexpr double mph_to_mps = 1.61 / 3.6;
-          constexpr double points_s_spacing{0.02}; // m
+          constexpr double vel_increment{0.224}; // velocity increment in mph
+          constexpr double traj_points_s_spacing{
+              0.02}; // distance in m between trajectory points
           constexpr int min_prev_size = {
-              2}; // min size of previous points for initialization
-          constexpr double waypoints_s_spacing{30.0}; // m
+              2}; // min number of previous points for initialization
+          constexpr double waypoints_s_spacing{
+              30.0}; // distance in m between the 3 trajectory waypoints ahead
           constexpr double safety_distance_front{
               30.0}; // safety distance in s from front objects in m
           constexpr double safety_distance_overtake_front{
-              50.0}; // safety distance in s from front objects for overtaking
-                     // in
-          // m
+              30.0}; // safety distance in s from front objects for overtaking
+                     // in m
           constexpr double safety_distance_overtake_rear{
-              -30.0}; // safety distance in s from side or rear objects for
-                      // overtaking in
-          // m
+              -30.0}; // safety distance in s from rear objects for
+                      // overtaking in m
           constexpr int n_points{50};       // number of points on the spline
-          constexpr double vel_limit{49.5}; // hard-coded speed limit
+          constexpr double vel_limit{49.5}; // hard-coded speed limit in mph
 
           std::size_t prev_size =
               previous_path_x
@@ -123,10 +123,10 @@ int main() {
             car_s = end_path_s;
           }
 
-          const int left_lane{0};
-          const int center_lane{1};
-          const int right_lane{2};
-          // current lane calculation
+          constexpr int left_lane{0};
+          constexpr int center_lane{1};
+          constexpr int right_lane{2};
+          // current host lane calculation
           int current_host_lane{center_lane};
           if (car_d < (2 + 4 * center_lane + 2) &&
               car_d > (2 + 4 * center_lane - 2)) {
@@ -140,9 +140,10 @@ int main() {
             current_host_lane = right_lane;
           }
 
-          int ref_lane = current_host_lane; // reference lane is the center lane
+          int ref_lane = current_host_lane; // reference lane is initialized to
+                                            // the center lane
 
-          // basic overtaking rules
+          // basic overtaking rules to stay in the carriageway
           bool overtaking_lane_left_free{false};
           bool overtaking_lane_right_free{false};
           if (current_host_lane == center_lane) {
@@ -156,10 +157,12 @@ int main() {
 
           // reference velocity calculation from object fusion data
           // together with reference lane calculation for overtaking
-          bool close_object{false};
-          double v_min_close_object{std::numeric_limits<double>::max()};
+          bool close_object_front{false}; // presence of close object in front
+          double v_min_close_object{
+              std::numeric_limits<double>::max()}; // velocity of close front
+                                                   // object in mph
           double vx_object, vy_object, vabs_object, s_object, d_object;
-          double s_object_without_prediction;
+          // cycle on all the objects
           for (std::size_t i = 0; i < sensor_fusion.size(); i++) {
             d_object = sensor_fusion[i][6];
             vx_object = sensor_fusion[i][3];
@@ -167,71 +170,64 @@ int main() {
             vabs_object =
                 std::sqrt(vx_object * vx_object + vy_object * vy_object);
             s_object = sensor_fusion[i][5];
-            s_object_without_prediction = s_object;
-            // simple object prediction
-            s_object += (double)prev_size * points_s_spacing * vabs_object;
-            // check if object is in ego lane and extract its velocity and s
+            // simple object prediction using object speed
+            s_object += (double)prev_size * traj_points_s_spacing * vabs_object;
+            // check if object is in host lane and extract its velocity and s
             if (d_object < (4 + 4 * current_host_lane) &&
                 d_object > (4 * current_host_lane)) {
               if ((s_object > car_s) &&
                   (s_object - car_s < safety_distance_front)) {
-                close_object = true;
+                close_object_front = true;
                 // std::cout << "Close object in front" << std::endl;
                 if (vabs_object < v_min_close_object) {
                   v_min_close_object = vabs_object;
                 }
               }
             }
-            // check if object is left of host vehicle within a safety s
-            // distance
-            else if ((d_object < 4 * current_host_lane) &&
-                     (d_object > 4 * current_host_lane - 2)) {
-              if ((s_object - car_s > safety_distance_overtake_rear) &&
-                  (s_object - car_s < safety_distance_overtake_front)) {
-                /*std::cout << "Object on left of ego - s diff = "
-                          << s_object - car_s << std::endl;*/
-                overtaking_lane_left_free = false;
-              }
-            }
-            // check if object is right of host vehicle within a safety s
-            // distance
-            else if ((d_object > 4 + 4 * current_host_lane) &&
-                     (d_object < 6 + 4 * current_host_lane)) {
-              /*std::cout << "Object on right of ego - s = " << s_object
-                        << std::endl;*/
-              if ((s_object - car_s > safety_distance_overtake_rear) &&
-                  (s_object - car_s < safety_distance_overtake_front)) {
-                /*std::cout << "Object on right of ego - s diff = "
-                          << s_object - car_s << std::endl;*/
-                overtaking_lane_right_free = false;
+            // check if object occupies left or right lanes wrt host vehicle
+            // current lane, within a certain s safety distance front and rear
+            else if ((s_object - car_s > safety_distance_overtake_rear) &&
+                     (s_object - car_s < safety_distance_overtake_front)) {
+              if ((4 * center_lane < d_object) &&
+                  (d_object < 4 * center_lane + 4)) {
+                if (current_host_lane == left_lane)
+                  overtaking_lane_right_free = false;
+                else if (current_host_lane == right_lane)
+                  overtaking_lane_left_free = false;
+              } else if (current_host_lane == center_lane) {
+                if ((0 < d_object) && (d_object < 4 * center_lane))
+                  overtaking_lane_left_free = false;
+                else if ((4 * center_lane + 4 < d_object) &&
+                         (d_object < 4 * center_lane + 8))
+                  overtaking_lane_right_free = false;
               }
             }
           }
 
-          // reference velocity final calculation
+          // reference velocity calculation
+          // reference velocity is 0.0 mph at "cold start"
           if (initialization) {
             ref_vel = 0.0;
             initialization = false;
           }
-
-          if (close_object) {
+          // reduce speed if close object in front slower than host
+          if (close_object_front) {
             if (car_speed > v_min_close_object) {
               ref_vel -= vel_increment;
             }
-            // prefer left overtaking to right overtaking
+            // if close object in front, prefer left overtaking to right
+            // overtaking
             if (overtaking_lane_left_free && current_host_lane > left_lane) {
               ref_lane = current_host_lane - 1;
-              // std::cout << "Overtake left to lane " << ref_lane << std::endl;
             } else if (overtaking_lane_right_free &&
                        current_host_lane < right_lane) {
               ref_lane = current_host_lane + 1;
-              // std::cout << "Overtake right to lane " << ref_lane <<
-              // std::endl;
             }
-          } else if (ref_vel < vel_limit) {
+          }
+          // if no close object in front, increase host speed
+          else if (ref_vel < vel_limit) {
             ref_vel += vel_increment;
           }
-          // std::cout << std::endl;
 
           // points for generating the spline
           vector<double> ptsx;
@@ -242,7 +238,7 @@ int main() {
           double ref_y = car_y;
           double ref_yaw = deg2rad(car_yaw);
 
-          // first two points of the spline: when previous path vector is
+          // first two waypoints of the spline: when previous path vector is
           // not initialized, they are the current car position and its
           // back-propagation with current heading
           if (prev_size < min_prev_size) {
@@ -256,7 +252,7 @@ int main() {
             ptsy.push_back(car_y);
           }
 
-          // first two points of the spline: when previous path vector is
+          // first two waypoints of the spline: when previous path vector is
           // initialized, they are the last two points from the
           // reference path and calculate the reference angle with
           // back-propagation
@@ -274,7 +270,7 @@ int main() {
             ptsy.push_back(ref_y);
           }
 
-          // next three points of the spline: calculate them from the
+          // next three waypoints of the spline: calculate them from the
           // current car s coordinate and d equal to center of ref_lane
           vector<double> next_wp0 =
               getXY(car_s + waypoints_s_spacing, 2 + 4 * ref_lane,
@@ -300,11 +296,11 @@ int main() {
             ptsy[i] = (shift_x * sin(0 - ref_yaw) + shift_y * cos(0 - ref_yaw));
           }
 
-          // set the spline to interpolate among the calculated points
+          // set the spline to interpolate among the calculated waypoints
           tk::spline s{};
           s.set_points(ptsx, ptsy);
 
-          // here it will be stored the next values for the planner
+          // here will be stored the next values for the planner
           vector<double> next_x_vals;
           vector<double> next_y_vals;
 
@@ -323,7 +319,8 @@ int main() {
           double x_add_on = 0;
 
           for (std::size_t i = 1; i <= n_points - previous_path_x.size(); i++) {
-            double N = target_dist / (points_s_spacing * ref_vel * mph_to_mps);
+            double N =
+                target_dist / (traj_points_s_spacing * ref_vel * mph_to_mps);
             double x_point = x_add_on + target_x / N;
             double y_point = s(x_point);
 
