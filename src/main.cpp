@@ -95,7 +95,7 @@ int main() {
 
           json msgJson;
 
-          // declaring some constants
+          // declaring some constants and parameters
           constexpr double mph_to_mps = 1.61 / 3.6;
           constexpr double vel_increment{0.224}; // velocity increment in mph
           constexpr double traj_points_s_spacing{
@@ -110,8 +110,13 @@ int main() {
               30.0}; // safety distance in s from front objects for overtaking
                      // in m
           constexpr double safety_distance_overtake_rear{
-              -30.0}; // safety distance in s from rear objects for
-                      // overtaking in m
+              -20.0}; // safety distance in s from rear objects for
+          // overtaking in m
+          constexpr double safety_distance_overtake_rear_fast_vehicles{
+              -50.0}; // safety distance in s from rear object that are very
+          // fast for overtaking in m
+          constexpr double vel_diff_fast_vehicle{
+              10.0}; // velocity difference from a fast vehicle in mph
           constexpr int n_points{50};       // number of points on the spline
           constexpr double vel_limit{49.5}; // hard-coded speed limit in mph
 
@@ -171,7 +176,8 @@ int main() {
                 std::sqrt(vx_object * vx_object + vy_object * vy_object);
             s_object = sensor_fusion[i][5];
             // simple object prediction using object speed
-            s_object += (double)prev_size * traj_points_s_spacing * vabs_object;
+            s_object += (double)prev_size * traj_points_s_spacing *
+                        vabs_object * mph_to_mps;
             // check if object is in host lane and extract its velocity and s
             if (d_object < (4 + 4 * current_host_lane) &&
                 d_object > (4 * current_host_lane)) {
@@ -186,7 +192,10 @@ int main() {
             }
             // check if object occupies left or right lanes wrt host vehicle
             // current lane, within a certain s safety distance front and rear
-            else if ((s_object - car_s > safety_distance_overtake_rear) &&
+            else if (((s_object - car_s > safety_distance_overtake_rear) ||
+                      ((s_object - car_s >
+                        safety_distance_overtake_rear_fast_vehicles) &&
+                       (car_speed < vabs_object - vel_diff_fast_vehicle))) &&
                      (s_object - car_s < safety_distance_overtake_front)) {
               if ((4 * center_lane < d_object) &&
                   (d_object < 4 * center_lane + 4)) {
