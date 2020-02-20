@@ -7,9 +7,9 @@ Self-Driving Car Engineer Nanodegree Program
 The Project
 ---
 
-In this project a path planning algorithm is implemented to make a vehicle safely navigate in a virtual highway with other vehicles using the original simulator provided by Udacity.
+In this project a motion planning algorithm is implemented to safely drive a vehicle on a highway with other vehicles using the original simulator provided by Udacity.
 
-The path planning is designed in order to comply to the following requirements:
+The motion planning is designed in order to comply to the following requirements:
 * Drive on the carriageway (one of the three lanes available)
 * Drive at a speed as high as possible but below the speed limit (50 mph)
 * Keep the center of the current lane
@@ -23,12 +23,12 @@ The path planning is designed in order to comply to the following requirements:
 Code guidelines
 ---
 
-The code of the path planning is located inside src/main.cpp from line 98 to line 350. It was decided to keep it simple and compact because the algorithm is very basic.
+The code of the motion planning is located inside src/main.cpp from line 98 to line 350. It was decided to keep it simple and compact because the algorithm is very basic.
 The code is commented in order to make it easy to navigate through it.
 
-An improvement could be using object oriented programming, creating a class for the path planning algorithm., especially if the path planning algorithm becomes more complex.
+An improvement could be using object oriented programming, creating a class for the motion planning algorithm., especially if the motion planning algorithm becomes more complex.
 
-* In lines 98 to 130 some constants and parameters are defined for the path planning algorithm
+* In lines 98 to 130 some constants and parameters are defined for the motion planning algorithm
 * From line 131 to 162 the current host vehicle lane is calculated and the basic overtaking rules are defined to make sure the vehicle stays on the carriageway
 * In lines 163 to 215 the data from object fusion are used to determine if there is a close vehicle ahead, extracting its velocity, and if there are vehicles occupying the neighbor lanes
 * In lines 216 to 240 the logic for regulating speed and deciding reference lane is implemented
